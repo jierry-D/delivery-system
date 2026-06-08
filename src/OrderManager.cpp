@@ -2,14 +2,13 @@
 #include "../include/Logger.h"
 #include <iostream>
 #include <iomanip>
-#include <unordered_set>
-#include <algorithm>
+#include <string>
 
-using namespace std;
+using std::to_string;
 
 bool OrderManager::orderExists(int orderId) const {
-    for (const auto& o : orders)
-        if (o.orderId == orderId) return true;
+    for (int i = 0; i < orders.size(); ++i)
+        if (orders[i].orderId == orderId) return true;
     return false;
 }
 
@@ -19,53 +18,51 @@ bool OrderManager::addOrder(const Order& order) {
         return false;
     }
     orders.push_back(order);
-    LOG_INFO("添加订单 " + to_string(order.orderId) +
-             "：" + to_string(order.srcNode) + " -> " + to_string(order.dstNode));
+    LOG_INFO("添加订单 " + to_string(order.orderId) + "：" +
+             to_string(order.srcNode) + " -> " + to_string(order.dstNode));
     return true;
 }
 
 bool OrderManager::removeOrder(int orderId) {
-    auto it = remove_if(orders.begin(), orders.end(),
-                        [orderId](const Order& o){ return o.orderId == orderId; });
-    if (it == orders.end()) {
-        LOG_WARN("订单 " + to_string(orderId) + " 不存在");
-        return false;
-    }
-    orders.erase(it, orders.end());
+    bool ok = orders.remove_first_if(
+        [orderId](const Order& o) { return o.orderId == orderId; });
+    if (!ok) { LOG_WARN("订单 " + to_string(orderId) + " 不存在"); return false; }
     LOG_INFO("删除订单 " + to_string(orderId));
     return true;
 }
 
 void OrderManager::listOrders() const {
     if (orders.empty()) {
-        cout << "  （当前无订单）\n";
+        std::cout << "  （当前无订单）\n";
         return;
     }
-    cout << left
-         << setw(8)  << "订单号"
-         << setw(8)  << "起点"
-         << setw(8)  << "终点"
-         << setw(12) << "货物"
-         << "优化目标\n";
-    cout << string(50, '-') << "\n";
-    for (const auto& o : orders) {
-        cout << setw(8)  << o.orderId
-             << setw(8)  << o.srcNode
-             << setw(8)  << o.dstNode
-             << setw(12) << o.goods
-             << (o.byTime ? "最短耗时" : "最低费用") << "\n";
+    std::cout << std::left
+              << std::setw(8)  << "订单号"
+              << std::setw(8)  << "起点"
+              << std::setw(8)  << "终点"
+              << std::setw(16) << "货物"
+              << "优化目标\n"
+              << std::string(50, '-') << "\n";
+    for (int i = 0; i < orders.size(); ++i) {
+        const Order& o = orders[i];
+        std::cout << std::setw(8)  << o.orderId
+                  << std::setw(8)  << o.srcNode
+                  << std::setw(8)  << o.dstNode
+                  << std::setw(16) << o.goods
+                  << (o.byTime ? "最短耗时" : "最低费用") << "\n";
     }
 }
 
-vector<DeliveryPlan> OrderManager::planAllOrders(const Graph& g) const {
-    vector<DeliveryPlan> plans;
-    for (const auto& order : orders) {
+DynArray<DeliveryPlan> OrderManager::planAllOrders(const Graph& g) const {
+    DynArray<DeliveryPlan> plans;
+    for (int i = 0; i < orders.size(); ++i) {
+        const Order& order = orders[i];
         DeliveryPlan plan;
         plan.order = order;
         if (order.byTime) {
-            auto allPaths = Dijkstra::shortestTimeFrom(g, order.srcNode);
-            auto it = allPaths.find(order.dstNode);
-            plan.result = (it != allPaths.end()) ? it->second : PathResult{};
+            HashMap<int, PathResult> all = Dijkstra::shortestTimeFrom(g, order.srcNode);
+            PathResult* pr = all.find(order.dstNode);
+            plan.result = pr ? *pr : PathResult{};
         } else {
             plan.result = Dijkstra::cheapestPath(g, order.srcNode, order.dstNode);
         }
@@ -76,38 +73,40 @@ vector<DeliveryPlan> OrderManager::planAllOrders(const Graph& g) const {
 }
 
 TopoResult OrderManager::planBatchSequence(const Graph& g) const {
-    // 收集所有订单涉及的节点（去重）
-    unordered_set<int> nodeSet;
-    for (const auto& o : orders) {
-        nodeSet.insert(o.srcNode);
-        nodeSet.insert(o.dstNode);
+    // 收集所有订单涉及节点（去重）
+    HashMap<int, bool> seen;
+    DynArray<int> nodeIds;
+    for (int i = 0; i < orders.size(); ++i) {
+        if (!seen.contains(orders[i].srcNode)) {
+            seen.set(orders[i].srcNode, true);
+            nodeIds.push_back(orders[i].srcNode);
+        }
+        if (!seen.contains(orders[i].dstNode)) {
+            seen.set(orders[i].dstNode, true);
+            nodeIds.push_back(orders[i].dstNode);
+        }
     }
-    vector<int> nodeIds(nodeSet.begin(), nodeSet.end());
     return TopoSort::sort(g, nodeIds);
 }
 
 void OrderManager::printPlan(const Graph& g, const DeliveryPlan& plan) const {
-    const Order& o = plan.order;
+    const Order&      o = plan.order;
     const PathResult& r = plan.result;
 
-    cout << "\n订单 " << o.orderId << "  货物：" << o.goods
-         << "  优化目标：" << (o.byTime ? "最短耗时" : "最低费用") << "\n";
-
+    std::cout << "\n订单 " << o.orderId << "  货物：" << o.goods
+              << "  优化目标：" << (o.byTime ? "最短耗时" : "最低费用") << "\n";
     if (!r.reachable) {
-        cout << "  [不可达] 起点 " << o.srcNode
-             << " 到终点 " << o.dstNode << " 无路径\n";
+        std::cout << "  [不可达]\n";
         return;
     }
-
-    cout << "  路径：";
-    for (size_t i = 0; i < r.path.size(); ++i) {
+    std::cout << "  路径：";
+    for (int i = 0; i < r.path.size(); ++i) {
         int id = r.path[i];
-        const Node* node = g.findNode(id);
-        cout << id << "(" << (node ? node->name : "?") << ")";
-        if (i + 1 < r.path.size()) cout << " -> ";
+        const Node* n = g.findNode(id);
+        std::cout << id << "(" << (n ? n->name : "?") << ")";
+        if (i + 1 < r.path.size()) std::cout << " -> ";
     }
-    cout << "\n";
-    cout << fixed << setprecision(2);
-    cout << "  总耗时：" << r.totalTime << " 小时"
-         << "  总费用：" << r.totalCost << " 元\n";
+    std::cout << std::fixed << std::setprecision(2)
+              << "\n  总耗时：" << r.totalTime << " 小时"
+              << "  总费用：" << r.totalCost << " 元\n";
 }

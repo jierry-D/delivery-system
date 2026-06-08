@@ -1,64 +1,75 @@
 #include "../include/TopoSort.h"
+#include "../include/Queue.h"
 #include "../include/Logger.h"
-#include <queue>
-#include <unordered_set>
+#include <string>
 
-using namespace std;
+using std::to_string;
 
-unordered_map<int, int> TopoSort::buildInDegree(
-    const Graph& g,
-    const vector<int>& nodeIds,
-    const unordered_map<int, bool>& inSet)
+HashMap<int, int> TopoSort::buildInDegree(
+    const Graph&          g,
+    const DynArray<int>&  nodeIds,
+    const HashMap<int, bool>& inSet)
 {
-    unordered_map<int, int> inDegree;
-    for (int id : nodeIds) inDegree[id] = 0;
+    HashMap<int, int> inDeg;
+    for (int i = 0; i < nodeIds.size(); ++i)
+        inDeg[nodeIds[i]] = 0;
 
-    for (int from : nodeIds) {
-        for (const Edge& e : g.getNeighbors(from)) {
-            if (inSet.count(e.to)) {
-                inDegree[e.to]++;
+    for (int i = 0; i < nodeIds.size(); ++i) {
+        const DynArray<Edge>& nbrs = g.getNeighbors(nodeIds[i]);
+        for (int j = 0; j < nbrs.size(); ++j) {
+            if (inSet.contains(nbrs[j].to)) {
+                int* deg = inDeg.find(nbrs[j].to);
+                if (deg) ++(*deg);
             }
         }
     }
-    return inDegree;
+    return inDeg;
 }
 
-TopoResult TopoSort::sort(const Graph& g, const vector<int>& nodeIds) {
+TopoResult TopoSort::sort(const Graph& g, const DynArray<int>& nodeIds) {
     TopoResult result;
-    result.hasCycle = false;
 
     if (nodeIds.empty()) return result;
 
     // 构建节点集合
-    unordered_map<int, bool> inSet;
-    for (int id : nodeIds) inSet[id] = true;
+    HashMap<int, bool> inSet;
+    for (int i = 0; i < nodeIds.size(); ++i)
+        inSet.set(nodeIds[i], true);
 
-    auto inDegree = buildInDegree(g, nodeIds, inSet);
+    HashMap<int, int> inDeg = buildInDegree(g, nodeIds, inSet);
 
-    queue<int> q;
-    for (int id : nodeIds) {
-        if (inDegree[id] == 0) q.push(id);
+    Queue<int> q;
+    for (int i = 0; i < nodeIds.size(); ++i) {
+        int* d = inDeg.find(nodeIds[i]);
+        if (d && *d == 0) q.push(nodeIds[i]);
     }
 
     while (!q.empty()) {
         int u = q.front(); q.pop();
         result.order.push_back(u);
 
-        for (const Edge& e : g.getNeighbors(u)) {
-            if (!inSet.count(e.to)) continue;
-            inDegree[e.to]--;
-            if (inDegree[e.to] == 0) q.push(e.to);
+        const DynArray<Edge>& nbrs = g.getNeighbors(u);
+        for (int i = 0; i < nbrs.size(); ++i) {
+            int v = nbrs[i].to;
+            if (!inSet.contains(v)) continue;
+            int* d = inDeg.find(v);
+            if (d) {
+                --(*d);
+                if (*d == 0) q.push(v);
+            }
         }
     }
 
-    // 若排序结果数量小于节点数，说明存在环
-    if ((int)result.order.size() < (int)nodeIds.size()) {
+    // 排序结果数量 < 节点数 → 有环
+    if (result.order.size() < nodeIds.size()) {
         result.hasCycle = true;
-        // 收集未被处理的节点（环路节点）
-        unordered_set<int> processed(result.order.begin(), result.order.end());
-        for (int id : nodeIds) {
-            if (!processed.count(id)) result.cycleNodes.push_back(id);
-        }
+        // 标记未被处理的节点为环路节点
+        HashMap<int, bool> processed;
+        for (int i = 0; i < result.order.size(); ++i)
+            processed.set(result.order[i], true);
+        for (int i = 0; i < nodeIds.size(); ++i)
+            if (!processed.contains(nodeIds[i]))
+                result.cycleNodes.push_back(nodeIds[i]);
         LOG_WARN("拓扑排序检测到环路，涉及节点数：" +
                  to_string(result.cycleNodes.size()));
     } else {

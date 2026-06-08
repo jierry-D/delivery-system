@@ -61,7 +61,7 @@ static void printPathResult(const PathResult& r, const string& label = "") {
         return;
     }
     cout << "  路径：";
-    for (size_t i = 0; i < r.path.size(); ++i) {
+    for (int i = 0; i < r.path.size(); ++i) {
         int id = r.path[i];
         const Node* n = g.findNode(id);
         cout << id << "(" << (n ? n->name : "?") << ")";
@@ -251,7 +251,7 @@ static void menuDelivery() {
                 cout << "\n";
             } else {
                 cout << "\n批次配送顺序（拓扑排序结果）：\n  ";
-                for (size_t i = 0; i < topoRes.order.size(); ++i) {
+                for (int i = 0; i < topoRes.order.size(); ++i) {
                     int id = topoRes.order[i];
                     const Node* n = g.findNode(id);
                     cout << id << "(" << (n ? n->name : "?") << ")";

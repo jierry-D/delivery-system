@@ -1,4 +1,6 @@
 delivery
 delivery_gui
+delivery_qt
 logs/
 *.o
+moc_*.cpp

@@ -1,95 +1,140 @@
 #include "../include/Dijkstra.h"
+#include "../include/MinHeap.h"
 #include "../include/Logger.h"
-#include <queue>
 #include <limits>
-#include <algorithm>
+#include <string>
 
-using namespace std;
-static const double INF = numeric_limits<double>::infinity();
+using std::to_string;
+static const double INF = std::numeric_limits<double>::infinity();
 
-map<int, PathResult> Dijkstra::shortestTimeFrom(const Graph& g, int src) {
+// 堆节点
+struct DijkEntry { double dist; int node; };
+
+// 最小堆比较器（dist 小的优先级高）
+struct DijkCmp {
+    bool operator()(const DijkEntry& a, const DijkEntry& b) const {
+        return a.dist < b.dist;
+    }
+};
+
+// ── 工具：从 prev 表回溯路径 ──────────────────────────
+static DynArray<int> buildPath(const HashMap<int,int>& prev, int dst) {
+    DynArray<int> path;
+    for (int cur = dst; cur != -1; ) {
+        path.push_back(cur);
+        const int* p = prev.find(cur);
+        cur = p ? *p : -1;
+    }
+    // 原地反转
+    for (int l = 0, r = path.size() - 1; l < r; ++l, --r) {
+        int t = path[l]; path[l] = path[r]; path[r] = t;
+    }
+    return path;
+}
+
+// ── 单源最短耗时 ──────────────────────────────────────
+HashMap<int, PathResult> Dijkstra::shortestTimeFrom(const Graph& g, int src) {
     if (!g.hasNode(src)) {
         LOG_ERROR("Dijkstra 起点 " + to_string(src) + " 不存在");
-        return {};
+        return HashMap<int, PathResult>{};
     }
 
-    auto ids = g.getAllNodeIds();
-    map<int, double> dist, costDist;
-    map<int, int> prev;
-    for (int id : ids) {
-        dist[id] = INF; costDist[id] = INF; prev[id] = -1;
-    }
-    dist[src] = 0; costDist[src] = 0;
+    DynArray<int> ids = g.getAllNodeIds();
 
-    // 小顶堆 {distance, nodeId}
-    priority_queue<pair<double,int>,
-                   vector<pair<double,int>>,
-                   greater<pair<double,int>>> pq;
+    HashMap<int, double> dist, costAccum;
+    HashMap<int, int>    prev;
+    for (int i = 0; i < ids.size(); ++i) {
+        dist[ids[i]]     = INF;
+        costAccum[ids[i]] = INF;
+        prev[ids[i]]     = -1;
+    }
+    dist[src]     = 0.0;
+    costAccum[src] = 0.0;
+
+    MinHeap<DijkEntry, DijkCmp> pq;
     pq.push({0.0, src});
 
     while (!pq.empty()) {
-        auto [d, u] = pq.top(); pq.pop();
-        if (d > dist[u]) continue;
-        for (const Edge& e : g.getNeighbors(u)) {
-            int v = e.to;
-            if (!g.hasNode(v)) continue;
-            double nd = dist[u] + e.time;
-            if (nd < dist[v]) {
-                dist[v] = nd;
-                costDist[v] = costDist[u] + e.cost;
+        DijkEntry top = pq.top(); pq.pop();
+        double d = top.dist;
+        int    u = top.node;
+        double* dp = dist.find(u);
+        if (!dp || d > *dp) continue;
+
+        const DynArray<Edge>& nbrs = g.getNeighbors(u);
+        for (int i = 0; i < nbrs.size(); ++i) {
+            int    v  = nbrs[i].to;
+            double nd = *dp + nbrs[i].time;
+            double* dv = dist.find(v);
+            if (!dv) continue;
+            if (nd < *dv) {
+                *dv = nd;
+                double* cv = costAccum.find(v);
+                double* cu = costAccum.find(u);
+                if (cv && cu) *cv = *cu + nbrs[i].cost;
                 prev[v] = u;
                 pq.push({nd, v});
             }
         }
     }
 
-    map<int, PathResult> results;
-    for (int id : ids) {
+    HashMap<int, PathResult> results;
+    for (int i = 0; i < ids.size(); ++i) {
+        int id = ids[i];
         PathResult pr;
-        pr.reachable = (dist[id] != INF);
+        double* dv = dist.find(id);
+        pr.reachable = (dv && *dv != INF);
         if (pr.reachable) {
-            pr.totalTime = dist[id];
-            pr.totalCost = costDist[id];
-            vector<int> path;
-            for (int cur = id; cur != -1; cur = prev[cur])
-                path.push_back(cur);
-            reverse(path.begin(), path.end());
-            pr.path = path;
+            pr.totalTime = *dv;
+            double* cv = costAccum.find(id);
+            pr.totalCost = cv ? *cv : 0.0;
+            pr.path = buildPath(prev, id);
         }
-        results[id] = pr;
+        results.set(id, pr);
     }
     return results;
 }
 
+// ── 两点最低费用 ──────────────────────────────────────
 PathResult Dijkstra::cheapestPath(const Graph& g, int src, int dst) {
     if (!g.hasNode(src) || !g.hasNode(dst)) {
         LOG_ERROR("cheapestPath：起点或终点不存在");
         return PathResult{};
     }
 
-    auto ids = g.getAllNodeIds();
-    map<int, double> dist, timeDist;
-    map<int, int> prev;
-    for (int id : ids) {
-        dist[id] = INF; timeDist[id] = INF; prev[id] = -1;
-    }
-    dist[src] = 0; timeDist[src] = 0;
+    DynArray<int> ids = g.getAllNodeIds();
 
-    priority_queue<pair<double,int>,
-                   vector<pair<double,int>>,
-                   greater<pair<double,int>>> pq;
+    HashMap<int, double> dist, timeAccum;
+    HashMap<int, int>    prev;
+    for (int i = 0; i < ids.size(); ++i) {
+        dist[ids[i]]     = INF;
+        timeAccum[ids[i]] = INF;
+        prev[ids[i]]     = -1;
+    }
+    dist[src]     = 0.0;
+    timeAccum[src] = 0.0;
+
+    MinHeap<DijkEntry, DijkCmp> pq;
     pq.push({0.0, src});
 
     while (!pq.empty()) {
-        auto [d, u] = pq.top(); pq.pop();
-        if (d > dist[u]) continue;
-        for (const Edge& e : g.getNeighbors(u)) {
-            int v = e.to;
-            if (!g.hasNode(v)) continue;
-            double nd = dist[u] + e.cost;
-            if (nd < dist[v]) {
-                dist[v] = nd;
-                timeDist[v] = timeDist[u] + e.time;
+        DijkEntry top = pq.top(); pq.pop();
+        double d = top.dist;
+        int    u = top.node;
+        double* dp = dist.find(u);
+        if (!dp || d > *dp) continue;
+
+        const DynArray<Edge>& nbrs = g.getNeighbors(u);
+        for (int i = 0; i < nbrs.size(); ++i) {
+            int    v  = nbrs[i].to;
+            double nd = *dp + nbrs[i].cost;  // 按费用
+            double* dv = dist.find(v);
+            if (!dv) continue;
+            if (nd < *dv) {
+                *dv = nd;
+                double* tv = timeAccum.find(v);
+                double* tu = timeAccum.find(u);
+                if (tv && tu) *tv = *tu + nbrs[i].time;
                 prev[v] = u;
                 pq.push({nd, v});
             }
@@ -97,15 +142,13 @@ PathResult Dijkstra::cheapestPath(const Graph& g, int src, int dst) {
     }
 
     PathResult pr;
-    pr.reachable = (dist[dst] != INF);
+    double* dv = dist.find(dst);
+    pr.reachable = (dv && *dv != INF);
     if (pr.reachable) {
-        pr.totalCost = dist[dst];
-        pr.totalTime = timeDist[dst];
-        vector<int> path;
-        for (int cur = dst; cur != -1; cur = prev[cur])
-            path.push_back(cur);
-        reverse(path.begin(), path.end());
-        pr.path = path;
+        pr.totalCost = *dv;
+        double* tv = timeAccum.find(dst);
+        pr.totalTime = tv ? *tv : 0.0;
+        pr.path = buildPath(prev, dst);
     }
     return pr;
 }
