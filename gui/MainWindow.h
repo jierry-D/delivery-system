@@ -1,86 +1,75 @@
 #pragma once
 #include <QMainWindow>
+#include <QWidget>
 #include <QTextEdit>
 #include <QLabel>
 #include <QStackedWidget>
-#include <QPushButton>
+#include <QPointF>
 #include "../include/Graph.h"
 #include "../include/OrderManager.h"
-#include "../include/DynArray.h"
-#include "GraphWidget.h"
 
+// ── 路网画布（内嵌于 MainWindow 头文件） ─────────────────
+class GraphWidget : public QWidget {
+    Q_OBJECT
+public:
+    explicit GraphWidget(QWidget* parent=nullptr);
+    void setGraph(const Graph* g);
+    void setHL(const DynArray<int>& nodes, const DynArray<int>& esrc,
+               const DynArray<int>& edst, int src, int dst);
+    void clearHL();
+signals:
+    void nodeHovered(int id);
+    void nodeClicked(int id);
+protected:
+    void paintEvent(QPaintEvent*) override;
+    void mouseMoveEvent(QMouseEvent*) override;
+    void mousePressEvent(QMouseEvent*) override;
+    void resizeEvent(QResizeEvent*) override;
+private:
+    const Graph* g_ = nullptr;
+    HashMap<int,QPointF> pos_;
+    DynArray<int> hlN_, hlSrc_, hlDst_;
+    int srcHL_=-1, dstHL_=-1, hov_=-1;
+    static constexpr float R=18.f;
+    void updatePos();
+    bool isNodeHL(int id) const;
+    bool isEdgeHL(int f, int t) const;
+    int  nodeAt(QPoint p) const;
+    void drawNode(class QPainter&, int id, QPointF, QColor);
+    void drawEdge(class QPainter&, QPointF a, QPointF b, QColor, float w, bool bi);
+};
+
+// ── 主窗口 ────────────────────────────────────────────────
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
-    explicit MainWindow(QWidget* parent = nullptr);
-
+    explicit MainWindow(QWidget* parent=nullptr);
 private slots:
-    // 导航
-    void goMain();
-    void goNode();
-    void goNetwork();
-    void goPath();
-    void goDelivery();
-
-    // 网点管理
-    void onAddNode();
-    void onDeleteNode();
-    void onUpdateNode();
-    void onFindNode();
-    void onListNodes();
-
-    // 路网管理
-    void onAddEdge();
-    void onDeleteEdge();
-    void onListEdges();
-    void onImportNetwork();
-    void onExportNetwork();
-
-    // 路径查询
-    void onShortestTime();
-    void onCheapestPath();
-    void onClearHL();
-
-    // 批次配送
-    void onAddOrder();
-    void onRemoveOrder();
-    void onListOrders();
-    void onImportOrders();
-    void onPlanAll();
-    void onTopoSort();
-    void onExportPlans();
-
+    void goMain(); void goNode(); void goNetwork(); void goPath(); void goDelivery();
+    void onAddNode();   void onDeleteNode(); void onUpdateNode();
+    void onFindNode();  void onListNodes();
+    void onAddEdge();   void onDeleteEdge(); void onListEdges();
+    void onImportNet(); void onExportNet();
+    void onShortTime(); void onCheapPath(); void onClearHL();
+    void onAddOrder();  void onDelOrder();  void onListOrders();
+    void onImportOrd(); void onPlanAll();   void onTopoSort();  void onExportPlans();
 private:
-    Graph        _graph;
-    OrderManager _om;
+    Graph        g_;
+    OrderManager om_;
+    DynArray<int> hlN_, hlSrc_, hlDst_;
+    int srcHL_=-1, dstHL_=-1;
 
-    // 高亮状态
-    DynArray<int> _hlNodes, _hlEdgeSrc, _hlEdgeDst;
-    int _srcHl = -1, _dstHl = -1;
+    QStackedWidget* stack_=nullptr;
+    QLabel*         stats_=nullptr;
+    QTextEdit*      log_=nullptr;
+    GraphWidget*    canvas_=nullptr;
+    QLabel*         mode_=nullptr;
 
-    // UI
-    QStackedWidget* _stack   = nullptr;
-    QLabel*         _stats   = nullptr;
-    QTextEdit*      _log     = nullptr;
-    GraphWidget*    _canvas  = nullptr;
-    QLabel*         _modeLabel = nullptr;
-
-    void setupUi();
-    QWidget* makeMainPage();
-    QWidget* makeNodePage();
-    QWidget* makeNetworkPage();
-    QWidget* makePathPage();
-    QWidget* makeDeliveryPage();
-
-    QPushButton* makeBtn(const QString& text, bool isBack = false);
-
-    void updateStats();
-    void refreshCanvas();
-
-    void msg(const QString& text, const QString& color = "#dcdcdc");
-    void msgOk (const QString& text);
-    void msgErr(const QString& text);
-
-    void applyPath(const DynArray<int>& path);
-    void clearHL();
+    void buildUi();
+    class QPushButton* btn(const QString& t, bool back=false);
+    QWidget* makePage(std::initializer_list<std::pair<QString,void(MainWindow::*)()>> items);
+    void updateStats(); void refresh();
+    void msg(const QString& t, const QString& c="#dcdcdc");
+    void msgOk(const QString& t); void msgErr(const QString& t);
+    void applyPath(const DynArray<int>& path); void clearHL();
 };
