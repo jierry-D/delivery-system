@@ -1,0 +1,4 @@
+delivery
+delivery_gui
+logs/
+*.o
